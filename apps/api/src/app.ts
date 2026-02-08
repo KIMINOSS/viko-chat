@@ -1,0 +1,24 @@
+import Fastify from 'fastify';
+import cors from '@fastify/cors';
+import websocket from '@fastify/websocket';
+import { translateRoutes } from './routes/translate.js';
+import { chatRoutes } from './routes/chat.js';
+import { authRoutes } from './routes/auth.js';
+
+export async function buildApp() {
+  const fastify = Fastify({ logger: true });
+
+  // Plugins
+  await fastify.register(cors, { origin: true });
+  await fastify.register(websocket);
+
+  // Routes
+  await fastify.register(translateRoutes, { prefix: '/api' });
+  await fastify.register(chatRoutes, { prefix: '/api' });
+  await fastify.register(authRoutes, { prefix: '/api' });
+
+  // Health check
+  fastify.get('/health', async () => ({ status: 'ok' }));
+
+  return fastify;
+}
