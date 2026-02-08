@@ -21,7 +21,7 @@ export function ContactsPage() {
     const { data } = await supabase
       .from('users')
       .select('*')
-      .ilike('email', `%${query.trim()}%`)
+      .ilike('name', `%${query.trim()}%`)
       .neq('id', user.id)
       .limit(20);
 
@@ -71,7 +71,7 @@ export function ContactsPage() {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by email..."
+            placeholder="Search by name..."
             className="flex-1 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-indigo-300"
           />
           <button

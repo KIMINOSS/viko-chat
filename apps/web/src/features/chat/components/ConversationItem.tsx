@@ -12,7 +12,16 @@ export function ConversationItem({ conversation }: ConversationItemProps) {
   const lastMsg = conversation.last_message;
 
   const name = otherUser?.name ?? 'Unknown';
-  const preview = lastMsg?.content ?? 'No messages yet';
+  const msgType = lastMsg?.message_type ?? 'text';
+  const preview = !lastMsg
+    ? 'No messages yet'
+    : msgType === 'image'
+      ? '\uD83D\uDCF7 Photo'
+      : msgType === 'video'
+        ? '\uD83C\uDFAC Video'
+        : msgType === 'file'
+          ? '\uD83D\uDCCE File'
+          : lastMsg.content;
   const time = lastMsg
     ? new Date(lastMsg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : '';

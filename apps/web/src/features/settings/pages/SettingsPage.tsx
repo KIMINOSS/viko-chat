@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import { Avatar } from '@/shared/components/Avatar';
 import { BottomNav } from '@/shared/components/BottomNav';
 import { Loading } from '@/shared/components/Loading';
+import { isPushSupported, isPushSubscribed, subscribePush, unsubscribePush } from '@/lib/push';
 import type { Lang } from '@/types';
 
 export function SettingsPage() {
@@ -14,6 +15,31 @@ export function SettingsPage() {
   const [lang, setLang] = useState<Lang>(profile?.preferred_lang ?? 'ko');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushLoading, setPushLoading] = useState(false);
+  const pushSupported = isPushSupported();
+
+  useEffect(() => {
+    if (pushSupported) {
+      isPushSubscribed().then(setPushEnabled);
+    }
+  }, [pushSupported]);
+
+  async function handlePushToggle() {
+    setPushLoading(true);
+    try {
+      if (pushEnabled) {
+        await unsubscribePush();
+        setPushEnabled(false);
+      } else {
+        const ok = await subscribePush();
+        setPushEnabled(ok);
+      }
+    } catch {
+      // 권한 거부 등
+    }
+    setPushLoading(false);
+  }
 
   if (authLoading) return <Loading />;
 
@@ -90,6 +116,30 @@ export function SettingsPage() {
             {saving ? 'Saving...' : saved ? 'Saved!' : 'Save'}
           </button>
         </div>
+
+        {/* Push Notifications */}
+        {pushSupported && (
+          <div className="mt-4 flex items-center justify-between rounded-2xl bg-white p-5 shadow-sm">
+            <div>
+              <p className="text-sm font-medium text-gray-900">Push Notifications</p>
+              <p className="text-xs text-gray-500">Receive message alerts</p>
+            </div>
+            <button
+              type="button"
+              onClick={handlePushToggle}
+              disabled={pushLoading}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out disabled:opacity-50 ${
+                pushEnabled ? 'bg-indigo-500' : 'bg-gray-200'
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  pushEnabled ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+        )}
 
         {/* Logout */}
         <button

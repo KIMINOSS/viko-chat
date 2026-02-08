@@ -12,7 +12,7 @@ export function ChatRoom() {
   const { conversationId } = useParams<{ conversationId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { messages, loading, sendMessage } = useMessages(conversationId!);
+  const { messages, loading, uploading, sendMessage, sendFileMessage } = useMessages(conversationId!);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [otherUser, setOtherUser] = useState<User | null>(null);
 
@@ -87,8 +87,18 @@ export function ChatRoom() {
         <div ref={bottomRef} />
       </main>
 
+      {/* Upload indicator */}
+      {uploading && (
+        <div className="fixed bottom-[calc(6.5rem+var(--sab))] left-0 right-0 z-40 flex justify-center">
+          <div className="flex items-center gap-2 rounded-full bg-black/70 px-4 py-2 text-xs text-white">
+            <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+            Uploading...
+          </div>
+        </div>
+      )}
+
       {/* Input */}
-      <MessageInput onSend={sendMessage} />
+      <MessageInput onSend={sendMessage} onFileSend={sendFileMessage} />
     </div>
   );
 }

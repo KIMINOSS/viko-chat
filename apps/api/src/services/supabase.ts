@@ -23,6 +23,8 @@ export interface Conversation {
   created_at: string;
 }
 
+export type MessageType = 'text' | 'image' | 'video' | 'file';
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -33,6 +35,10 @@ export interface Message {
   target_lang: 'ko' | 'vi';
   read_at: string | null;
   created_at: string;
+  message_type: MessageType;
+  file_url: string | null;
+  file_name: string | null;
+  file_size: number | null;
 }
 
 // User operations

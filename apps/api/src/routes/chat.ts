@@ -5,13 +5,20 @@ import {
   createMessage,
   getConversations,
   getOrCreateConversation,
+  getUserById,
 } from '../services/supabase.js';
 import { translateMessage } from '../services/gemini.js';
+import { sendPushToUser } from '../services/push.js';
+import { supabase } from '../services/supabase.js';
 
 const messageSchema = z.object({
   conversationId: z.string().uuid(),
   senderId: z.string().uuid(),
   content: z.string().min(1).max(5000),
+  messageType: z.enum(['text', 'image', 'video', 'file']).optional().default('text'),
+  fileUrl: z.string().url().optional(),
+  fileName: z.string().optional(),
+  fileSize: z.number().optional(),
 });
 
 const conversationSchema = z.object({
@@ -79,13 +86,16 @@ export const chatRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/messages', async (request, reply) => {
     try {
       const body = messageSchema.parse(request.body);
+      const isFileMessage = body.messageType !== 'text';
 
-      // 번역 수행 (실패 시 원문만 저장)
+      // 텍스트 메시지만 번역 수행 (파일 메시지는 스킵)
       let translation = { translated: null as string | null, sourceLang: 'ko' as const, targetLang: 'vi' as const };
-      try {
-        translation = await translateMessage(body.content);
-      } catch (translateError) {
-        fastify.log.warn('Translation failed, saving without translation:', translateError);
+      if (!isFileMessage) {
+        try {
+          translation = await translateMessage(body.content);
+        } catch (translateError) {
+          fastify.log.warn('Translation failed, saving without translation:', translateError);
+        }
       }
 
       // 메시지 저장
@@ -96,7 +106,39 @@ export const chatRoutes: FastifyPluginAsync = async (fastify) => {
         translated: translation.translated,
         source_lang: translation.sourceLang,
         target_lang: translation.targetLang,
+        message_type: body.messageType,
+        file_url: body.fileUrl ?? null,
+        file_name: body.fileName ?? null,
+        file_size: body.fileSize ?? null,
       });
+
+      // 푸시 알림 (fire-and-forget)
+      (async () => {
+        try {
+          const { data: conv } = await supabase
+            .from('conversations')
+            .select('user1_id, user2_id')
+            .eq('id', body.conversationId)
+            .single();
+
+          if (conv) {
+            const recipientId = conv.user1_id === body.senderId ? conv.user2_id : conv.user1_id;
+            const sender = await getUserById(body.senderId);
+            const senderName = sender?.name ?? 'Someone';
+            const preview = isFileMessage
+              ? { image: '📷 Photo', video: '🎬 Video', file: '📎 File' }[body.messageType]
+              : body.content.length > 50 ? body.content.slice(0, 50) + '...' : body.content;
+
+            await sendPushToUser(recipientId, {
+              title: senderName,
+              body: preview ?? body.content,
+              url: `/chat/${body.conversationId}`,
+            });
+          }
+        } catch (pushErr) {
+          fastify.log.warn('Push notification failed:', pushErr);
+        }
+      })();
 
       return { success: true, data: message };
     } catch (error) {
@@ -115,10 +157,15 @@ export const chatRoutes: FastifyPluginAsync = async (fastify) => {
         const data = JSON.parse(rawMessage.toString());
 
         if (data.type === 'message') {
+          const msgType = data.messageType ?? 'text';
+          const isFile = msgType !== 'text';
+
           let translation = { translated: null as string | null, sourceLang: 'ko' as const, targetLang: 'vi' as const };
-          try {
-            translation = await translateMessage(data.content);
-          } catch { /* translation optional */ }
+          if (!isFile) {
+            try {
+              translation = await translateMessage(data.content);
+            } catch { /* translation optional */ }
+          }
 
           const message = await createMessage({
             conversation_id: data.conversationId,
@@ -127,6 +174,10 @@ export const chatRoutes: FastifyPluginAsync = async (fastify) => {
             translated: translation.translated,
             source_lang: translation.sourceLang,
             target_lang: translation.targetLang,
+            message_type: msgType,
+            file_url: data.fileUrl ?? null,
+            file_name: data.fileName ?? null,
+            file_size: data.fileSize ?? null,
           });
 
           socket.send(
