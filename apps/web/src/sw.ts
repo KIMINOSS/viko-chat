@@ -1,7 +1,19 @@
 /// <reference lib="webworker" />
-import { precacheAndRoute } from 'workbox-precaching';
+import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching';
 
 declare const self: ServiceWorkerGlobalScope;
+
+// 새 SW 즉시 활성화 (안드로이드 캐시 무한로딩 방지)
+self.addEventListener('install', () => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
+// 이전 버전 캐시 정리
+cleanupOutdatedCaches();
 
 // Workbox precache injection point
 precacheAndRoute(self.__WB_MANIFEST);
