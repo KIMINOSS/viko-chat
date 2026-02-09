@@ -1,8 +1,13 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
+import { useAuthStore } from '../hooks/useAuth';
+import type { Lang, User } from '@/types';
 
 export function LoginPage() {
+  const navigate = useNavigate();
   const [name, setName] = useState('');
+  const [lang, setLang] = useState<Lang>('ko');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -22,11 +27,17 @@ export function LoginPage() {
     const password = `viko${name.toLowerCase()}2024`;
 
     try {
-      // 기존 계정으로 로그인 시도
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      let userId: string | undefined;
+
+      // 기존 계정 로그인 시도
+      const { data: signInData, error: signInError } =
+        await supabase.auth.signInWithPassword({ email, password });
 
       if (signInError) {
-        // 계정 없으면 회원가입
+        if (signInError.message !== 'Invalid login credentials') {
+          throw signInError;
+        }
+        // 계정 없으면 회원가입 (trigger가 users 레코드 자동 생성)
         const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
@@ -34,12 +45,38 @@ export function LoginPage() {
         });
         if (signUpError) throw signUpError;
 
-        // 자동 로그인 안 됐으면 수동 로그인
+        userId = signUpData.user?.id;
+
+        // 자동 세션 없으면 수동 로그인
         if (!signUpData.session) {
-          const { error: retryError } = await supabase.auth.signInWithPassword({ email, password });
+          const { data: retryData, error: retryError } =
+            await supabase.auth.signInWithPassword({ email, password });
           if (retryError) throw retryError;
+          userId = retryData.user?.id;
+        }
+      } else {
+        userId = signInData.user?.id;
+      }
+
+      // preferred_lang 업데이트 + 프로필 가져오기
+      if (userId) {
+        await supabase
+          .from('users')
+          .update({ preferred_lang: lang })
+          .eq('id', userId);
+
+        const { data: profile } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', userId)
+          .single();
+
+        if (profile) {
+          useAuthStore.setState({ profile: profile as User });
         }
       }
+
+      navigate('/', { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
@@ -65,7 +102,7 @@ export function LoginPage() {
         <form onSubmit={handleSubmit} className="space-y-4 rounded-2xl bg-white p-6 shadow-sm">
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">
-              Your Name
+              Your ID
             </label>
             <input
               type="text"
@@ -80,6 +117,27 @@ export function LoginPage() {
             <p className="mt-1.5 text-center text-xs text-gray-400">
               Enter 4 English letters as your ID
             </p>
+          </div>
+
+          {/* Language Selector */}
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Language</label>
+            <div className="grid grid-cols-2 gap-3">
+              {(['ko', 'vi'] as const).map((l) => (
+                <button
+                  key={l}
+                  type="button"
+                  onClick={() => setLang(l)}
+                  className={`rounded-xl border-2 px-4 py-2.5 text-sm font-medium transition ${
+                    lang === l
+                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                  }`}
+                >
+                  {l === 'ko' ? '한국어' : 'Tiếng Việt'}
+                </button>
+              ))}
+            </div>
           </div>
 
           {error && (

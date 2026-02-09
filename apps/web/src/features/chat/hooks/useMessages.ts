@@ -104,6 +104,7 @@ export function useMessages(conversationId: string) {
       if (!user) return;
 
       setUploading(true);
+      const tempId = crypto.randomUUID();
       try {
         // Supabase Storage 업로드
         const ext = file.name.split('.').pop() ?? '';
@@ -122,7 +123,6 @@ export function useMessages(conversationId: string) {
         const fileUrl = urlData.publicUrl;
 
         // Optimistic update
-        const tempId = crypto.randomUUID();
         const optimistic: Message = {
           id: tempId,
           conversation_id: conversationId,
@@ -158,7 +158,7 @@ export function useMessages(conversationId: string) {
       } catch {
         // 실패 시 마지막 메시지 제거
         const messages = useChatStore.getState().currentMessages;
-        setCurrentMessages(messages.filter((m) => m.sender_id === user.id ? m.file_url !== null : true));
+        setCurrentMessages(messages.filter((m) => m.id !== tempId));
       } finally {
         setUploading(false);
       }

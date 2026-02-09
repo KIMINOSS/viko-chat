@@ -47,11 +47,7 @@ export async function unsubscribePush(): Promise<void> {
     await subscription.unsubscribe();
 
     try {
-      await fetch('/api/push/unsubscribe', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ endpoint }),
-      });
+      await api.delete('/push/unsubscribe', { endpoint });
     } catch {
       // 서버 삭제 실패해도 로컬 구독은 이미 해제됨
     }

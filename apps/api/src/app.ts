@@ -10,7 +10,13 @@ export async function buildApp() {
   const fastify = Fastify({ logger: true });
 
   // Plugins
-  await fastify.register(cors, { origin: true });
+  await fastify.register(cors, {
+    origin: [
+      'https://viko-chat.vercel.app',
+      'http://localhost:5173',
+    ],
+    credentials: true,
+  });
   await fastify.register(websocket);
 
   // Routes

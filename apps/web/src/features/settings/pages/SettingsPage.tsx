@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/features/auth/hooks/useAuth';
+import { useAuth, useAuthStore } from '@/features/auth/hooks/useAuth';
 import { Avatar } from '@/shared/components/Avatar';
 import { BottomNav } from '@/shared/components/BottomNav';
 import { Loading } from '@/shared/components/Loading';
 import { isPushSupported, isPushSubscribed, subscribePush, unsubscribePush } from '@/lib/push';
-import type { Lang } from '@/types';
+import type { Lang, User } from '@/types';
 
 export function SettingsPage() {
   const { user, profile, loading: authLoading } = useAuth();
@@ -53,6 +53,16 @@ export function SettingsPage() {
       .update({ name, preferred_lang: lang })
       .eq('id', user.id);
 
+    // Update auth store profile
+    const { data: updated } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+    if (updated) {
+      useAuthStore.setState({ profile: updated as User });
+    }
+
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -73,7 +83,7 @@ export function SettingsPage() {
         {/* Profile Card */}
         <div className="flex flex-col items-center rounded-2xl bg-white p-6 shadow-sm">
           <Avatar name={profile?.name ?? '?'} url={profile?.avatar_url} size="lg" />
-          <p className="mt-2 text-sm text-gray-500">{user?.email}</p>
+          <p className="mt-2 text-sm font-medium text-gray-700">{profile?.name}</p>
         </div>
 
         {/* Edit Form */}

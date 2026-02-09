@@ -10,10 +10,10 @@ import {
 import { translateMessage } from '../services/gemini.js';
 import { sendPushToUser } from '../services/push.js';
 import { supabase } from '../services/supabase.js';
+import { authMiddleware, type AuthenticatedRequest } from '../middleware/auth.js';
 
 const messageSchema = z.object({
   conversationId: z.string().uuid(),
-  senderId: z.string().uuid(),
   content: z.string().min(1).max(5000),
   messageType: z.enum(['text', 'image', 'video', 'file']).optional().default('text'),
   fileUrl: z.string().url().optional(),
@@ -22,18 +22,14 @@ const messageSchema = z.object({
 });
 
 const conversationSchema = z.object({
-  userId: z.string().uuid(),
   targetUserId: z.string().uuid(),
 });
 
 export const chatRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /api/conversations
-  fastify.get('/conversations', async (request, reply) => {
+  fastify.get('/conversations', { preHandler: authMiddleware }, async (request, reply) => {
     try {
-      const { userId } = z
-        .object({ userId: z.string().uuid() })
-        .parse(request.query);
-
+      const userId = (request as AuthenticatedRequest).user.id;
       const conversations = await getConversations(userId);
       return { success: true, data: conversations };
     } catch (error) {
@@ -45,9 +41,10 @@ export const chatRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /api/conversations
-  fastify.post('/conversations', async (request, reply) => {
+  fastify.post('/conversations', { preHandler: authMiddleware }, async (request, reply) => {
     try {
-      const { userId, targetUserId } = conversationSchema.parse(request.body);
+      const userId = (request as AuthenticatedRequest).user.id;
+      const { targetUserId } = conversationSchema.parse(request.body);
       const conversation = await getOrCreateConversation(userId, targetUserId);
       return { success: true, data: conversation };
     } catch (error) {
@@ -59,7 +56,7 @@ export const chatRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // GET /api/conversations/:id/messages
-  fastify.get('/conversations/:id/messages', async (request, reply) => {
+  fastify.get('/conversations/:id/messages', { preHandler: authMiddleware }, async (request, reply) => {
     try {
       const { id } = z
         .object({ id: z.string().uuid() })
@@ -83,25 +80,26 @@ export const chatRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /api/messages
-  fastify.post('/messages', async (request, reply) => {
+  fastify.post('/messages', { preHandler: authMiddleware }, async (request, reply) => {
     try {
+      const senderId = (request as AuthenticatedRequest).user.id;
       const body = messageSchema.parse(request.body);
       const isFileMessage = body.messageType !== 'text';
 
       // 텍스트 메시지만 번역 수행 (파일 메시지는 스킵)
-      let translation = { translated: null as string | null, sourceLang: 'ko' as const, targetLang: 'vi' as const };
+      let translation: { translated: string | null; sourceLang: 'ko' | 'vi'; targetLang: 'ko' | 'vi' } = { translated: null, sourceLang: 'ko', targetLang: 'vi' };
       if (!isFileMessage) {
         try {
           translation = await translateMessage(body.content);
         } catch (translateError) {
-          fastify.log.warn('Translation failed, saving without translation:', translateError);
+          fastify.log.warn(`Translation failed, saving without translation: ${translateError}`);
         }
       }
 
       // 메시지 저장
       const message = await createMessage({
         conversation_id: body.conversationId,
-        sender_id: body.senderId,
+        sender_id: senderId,
         content: body.content,
         translated: translation.translated,
         source_lang: translation.sourceLang,
@@ -122,11 +120,12 @@ export const chatRoutes: FastifyPluginAsync = async (fastify) => {
             .single();
 
           if (conv) {
-            const recipientId = conv.user1_id === body.senderId ? conv.user2_id : conv.user1_id;
-            const sender = await getUserById(body.senderId);
+            const recipientId = conv.user1_id === senderId ? conv.user2_id : conv.user1_id;
+            const sender = await getUserById(senderId);
             const senderName = sender?.name ?? 'Someone';
+            const previewMap: Record<string, string> = { image: '📷 Photo', video: '🎬 Video', file: '📎 File' };
             const preview = isFileMessage
-              ? { image: '📷 Photo', video: '🎬 Video', file: '📎 File' }[body.messageType]
+              ? previewMap[body.messageType] ?? body.content
               : body.content.length > 50 ? body.content.slice(0, 50) + '...' : body.content;
 
             await sendPushToUser(recipientId, {
@@ -136,7 +135,7 @@ export const chatRoutes: FastifyPluginAsync = async (fastify) => {
             });
           }
         } catch (pushErr) {
-          fastify.log.warn('Push notification failed:', pushErr);
+          fastify.log.warn(`Push notification failed: ${pushErr}`);
         }
       })();
 
@@ -151,7 +150,24 @@ export const chatRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // WebSocket for real-time chat
-  fastify.get('/ws/chat', { websocket: true }, (socket, request) => {
+  fastify.get('/ws/chat', { websocket: true }, async (socket, request) => {
+    // WebSocket 인증: query param에서 토큰 검증
+    const url = new URL(request.url, `http://${request.headers.host}`);
+    const token = url.searchParams.get('token');
+
+    if (!token) {
+      socket.send(JSON.stringify({ type: 'error', error: 'Missing token' }));
+      socket.close();
+      return;
+    }
+
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error || !user) {
+      socket.send(JSON.stringify({ type: 'error', error: 'Invalid token' }));
+      socket.close();
+      return;
+    }
+
     socket.on('message', async (rawMessage) => {
       try {
         const data = JSON.parse(rawMessage.toString());
@@ -160,7 +176,7 @@ export const chatRoutes: FastifyPluginAsync = async (fastify) => {
           const msgType = data.messageType ?? 'text';
           const isFile = msgType !== 'text';
 
-          let translation = { translated: null as string | null, sourceLang: 'ko' as const, targetLang: 'vi' as const };
+          let translation: { translated: string | null; sourceLang: 'ko' | 'vi'; targetLang: 'ko' | 'vi' } = { translated: null, sourceLang: 'ko', targetLang: 'vi' };
           if (!isFile) {
             try {
               translation = await translateMessage(data.content);
@@ -169,7 +185,7 @@ export const chatRoutes: FastifyPluginAsync = async (fastify) => {
 
           const message = await createMessage({
             conversation_id: data.conversationId,
-            sender_id: data.senderId,
+            sender_id: user.id,
             content: data.content,
             translated: translation.translated,
             source_lang: translation.sourceLang,

@@ -1,7 +1,27 @@
-import { useState, useRef, useEffect } from 'react';
-import data from '@emoji-mart/data';
-import Picker from '@emoji-mart/react';
+import { useState, useRef, useEffect, Suspense, lazy } from 'react';
 import type { MessageType } from '@/types';
+
+const EmojiPicker = lazy(() =>
+  Promise.all([
+    import('@emoji-mart/data'),
+    import('@emoji-mart/react'),
+  ]).then(([dataModule, pickerModule]) => ({
+    default: function LazyPicker(props: { onEmojiSelect: (emoji: { native: string }) => void }) {
+      const Picker = pickerModule.default;
+      return (
+        <Picker
+          data={dataModule.default}
+          onEmojiSelect={props.onEmojiSelect}
+          theme="light"
+          previewPosition="none"
+          skinTonePosition="none"
+          maxFrequentRows={2}
+          perLine={8}
+        />
+      );
+    },
+  })),
+);
 
 interface MessageInputProps {
   onSend: (content: string) => void;
@@ -114,15 +134,9 @@ export function MessageInput({ onSend, onFileSend }: MessageInputProps) {
         {/* 이모지 피커 */}
         {showEmojiPicker && (
           <div ref={emojiRef} className="absolute bottom-full left-2 right-2 mb-1">
-            <Picker
-              data={data}
-              onEmojiSelect={handleEmojiSelect}
-              theme="light"
-              previewPosition="none"
-              skinTonePosition="none"
-              maxFrequentRows={2}
-              perLine={8}
-            />
+            <Suspense fallback={<div className="flex h-64 items-center justify-center rounded-xl bg-white shadow-lg"><span className="text-sm text-gray-400">Loading...</span></div>}>
+              <EmojiPicker onEmojiSelect={handleEmojiSelect} />
+            </Suspense>
           </div>
         )}
 
@@ -163,7 +177,7 @@ export function MessageInput({ onSend, onFileSend }: MessageInputProps) {
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Type a message..."
-            className="flex-1 rounded-full border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm outline-none transition focus:border-indigo-300 focus:bg-white"
+            className="flex-1 rounded-full border border-gray-200 bg-gray-50 px-4 py-2.5 text-base outline-none transition focus:border-indigo-300 focus:bg-white"
           />
 
           <button
