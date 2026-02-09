@@ -48,24 +48,28 @@ export function SettingsPage() {
     setSaving(true);
     setSaved(false);
 
-    await supabase
-      .from('users')
-      .update({ name, preferred_lang: lang })
-      .eq('id', user.id);
+    try {
+      await supabase
+        .from('users')
+        .update({ name, preferred_lang: lang })
+        .eq('id', user.id);
 
-    // Update auth store profile
-    const { data: updated } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', user.id)
-      .single();
-    if (updated) {
-      useAuthStore.setState({ profile: updated as User });
+      const { data: updated } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+      if (updated) {
+        useAuthStore.setState({ profile: updated as User });
+      }
+
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {
+      // save 실패 시 UI 복구
+    } finally {
+      setSaving(false);
     }
-
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
   }
 
   async function handleLogout() {

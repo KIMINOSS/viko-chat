@@ -18,43 +18,50 @@ export function ContactsPage() {
     if (!query.trim() || !user) return;
 
     setSearching(true);
-    const { data } = await supabase
-      .from('users')
-      .select('*')
-      .ilike('name', `%${query.trim()}%`)
-      .neq('id', user.id)
-      .limit(20);
+    try {
+      const { data } = await supabase
+        .from('users')
+        .select('*')
+        .ilike('name', `%${query.trim()}%`)
+        .neq('id', user.id)
+        .limit(20);
 
-    setResults((data as User[]) ?? []);
-    setSearching(false);
+      setResults((data as User[]) ?? []);
+    } catch {
+      setResults([]);
+    } finally {
+      setSearching(false);
+    }
   }
 
   async function startConversation(targetUserId: string) {
     if (!user) return;
 
-    // Check existing conversation
-    const { data: existing } = await supabase
-      .from('conversations')
-      .select('id')
-      .or(
-        `and(user1_id.eq.${user.id},user2_id.eq.${targetUserId}),and(user1_id.eq.${targetUserId},user2_id.eq.${user.id})`,
-      )
-      .single();
+    try {
+      const { data: existing } = await supabase
+        .from('conversations')
+        .select('id')
+        .or(
+          `and(user1_id.eq.${user.id},user2_id.eq.${targetUserId}),and(user1_id.eq.${targetUserId},user2_id.eq.${user.id})`,
+        )
+        .maybeSingle();
 
-    if (existing) {
-      navigate(`/chat/${existing.id}`);
-      return;
-    }
+      if (existing) {
+        navigate(`/chat/${existing.id}`);
+        return;
+      }
 
-    // Create new conversation
-    const { data: newConvo } = await supabase
-      .from('conversations')
-      .insert({ user1_id: user.id, user2_id: targetUserId })
-      .select()
-      .single();
+      const { data: newConvo } = await supabase
+        .from('conversations')
+        .insert({ user1_id: user.id, user2_id: targetUserId })
+        .select()
+        .single();
 
-    if (newConvo) {
-      navigate(`/chat/${newConvo.id}`);
+      if (newConvo) {
+        navigate(`/chat/${newConvo.id}`);
+      }
+    } catch {
+      // silent fail - UI에서 재시도 가능
     }
   }
 

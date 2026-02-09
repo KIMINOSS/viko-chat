@@ -16,22 +16,25 @@ export function ChatRoom() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [otherUser, setOtherUser] = useState<User | null>(null);
 
-  // Fetch conversation partner info
   useEffect(() => {
     if (!conversationId || !user) return;
 
     (async () => {
-      const { data: convo } = await supabase
-        .from('conversations')
-        .select('*')
-        .eq('id', conversationId)
-        .single();
+      try {
+        const { data: convo } = await supabase
+          .from('conversations')
+          .select('*')
+          .eq('id', conversationId)
+          .single();
 
-      if (!convo) return;
+        if (!convo) return;
 
-      const otherId = convo.user1_id === user.id ? convo.user2_id : convo.user1_id;
-      const { data } = await supabase.from('users').select('*').eq('id', otherId).single();
-      if (data) setOtherUser(data as User);
+        const otherId = convo.user1_id === user.id ? convo.user2_id : convo.user1_id;
+        const { data } = await supabase.from('users').select('*').eq('id', otherId).single();
+        if (data) setOtherUser(data as User);
+      } catch {
+        // 상대방 정보 조회 실패 - 헤더만 비어있음
+      }
     })();
   }, [conversationId, user?.id]);
 

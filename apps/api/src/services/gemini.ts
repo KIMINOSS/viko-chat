@@ -44,7 +44,12 @@ Respond in JSON format only:
   "targetLang": "ko" or "vi"
 }`;
 
-  const result = await model.generateContent(prompt);
+  const result = await Promise.race([
+    model.generateContent(prompt),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Gemini API timeout')), 10_000),
+    ),
+  ]);
   const response = result.response.text();
 
   // Extract JSON from response

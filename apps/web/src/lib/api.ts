@@ -10,22 +10,35 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const authHeaders = await getAuthHeaders();
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders,
-      ...options.headers,
-    },
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30_000);
 
-  const json = await res.json() as ApiResponse<T>;
+  try {
+    const res = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders,
+        ...options.headers,
+      },
+    });
 
-  if (!res.ok || !json.success) {
-    throw new Error(json.error ?? 'Request failed');
+    const json = await res.json() as ApiResponse<T>;
+
+    if (!res.ok || !json.success) {
+      throw new Error(json.error ?? 'Request failed');
+    }
+
+    return json.data as T;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('Request timeout');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  return json.data as T;
 }
 
 export const api = {
