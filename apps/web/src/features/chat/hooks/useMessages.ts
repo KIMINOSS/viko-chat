@@ -12,11 +12,10 @@ export function useMessages(conversationId: string) {
   const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
-    if (!conversationId) return;
+    if (!conversationId) { setLoading(false); return; }
 
     fetchMessages();
 
-    // Realtime subscription
     const channel = supabase
       .channel(`messages:${conversationId}`)
       .on(
@@ -29,7 +28,6 @@ export function useMessages(conversationId: string) {
         },
         (payload) => {
           const newMsg = payload.new as Message;
-          // Only add if not from current user (our optimistic update already added it)
           if (newMsg.sender_id !== user?.id) {
             addMessage(newMsg);
           }
@@ -44,22 +42,24 @@ export function useMessages(conversationId: string) {
   }, [conversationId]);
 
   async function fetchMessages() {
-    const { data } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: true })
-      .limit(100);
+    try {
+      const { data } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true })
+        .limit(100);
 
-    setCurrentMessages((data as Message[]) ?? []);
-    setLoading(false);
+      setCurrentMessages((data as Message[]) ?? []);
+    } finally {
+      setLoading(false);
+    }
   }
 
   const sendMessage = useCallback(
     async (content: string) => {
       if (!user || !content.trim()) return;
 
-      // Optimistic update
       const tempId = crypto.randomUUID();
       const optimistic: Message = {
         id: tempId,
@@ -85,13 +85,11 @@ export function useMessages(conversationId: string) {
           content: content.trim(),
         });
 
-        // Replace optimistic with real
         useChatStore.getState().updateMessage(tempId, {
           ...saved,
           id: saved.id,
         });
       } catch {
-        // Remove optimistic on failure
         const messages = useChatStore.getState().currentMessages;
         setCurrentMessages(messages.filter((m) => m.id !== tempId));
       }
@@ -106,7 +104,6 @@ export function useMessages(conversationId: string) {
       setUploading(true);
       const tempId = crypto.randomUUID();
       try {
-        // Supabase Storage 업로드
         const ext = file.name.split('.').pop() ?? '';
         const filePath = `${conversationId}/${crypto.randomUUID()}.${ext}`;
 
@@ -122,7 +119,6 @@ export function useMessages(conversationId: string) {
 
         const fileUrl = urlData.publicUrl;
 
-        // Optimistic update
         const optimistic: Message = {
           id: tempId,
           conversation_id: conversationId,
@@ -140,7 +136,6 @@ export function useMessages(conversationId: string) {
         };
         addMessage(optimistic);
 
-        // API로 메시지 전송
         const saved = await api.post<Message>('/messages', {
           conversationId,
           senderId: user.id,
@@ -156,7 +151,6 @@ export function useMessages(conversationId: string) {
           id: saved.id,
         });
       } catch {
-        // 실패 시 마지막 메시지 제거
         const messages = useChatStore.getState().currentMessages;
         setCurrentMessages(messages.filter((m) => m.id !== tempId));
       } finally {
