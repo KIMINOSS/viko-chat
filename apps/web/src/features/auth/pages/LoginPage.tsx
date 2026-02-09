@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
+import { api } from '@/lib/api';
 import { useAuthStore } from '../hooks/useAuth';
 import type { Lang, User } from '@/types';
 
@@ -29,7 +30,7 @@ export function LoginPage() {
     try {
       let userId: string | undefined;
 
-      // 기존 계정 로그인 시도
+      // 1) 로그인 시도
       const { data: signInData, error: signInError } =
         await supabase.auth.signInWithPassword({ email, password });
 
@@ -37,7 +38,7 @@ export function LoginPage() {
         if (signInError.message !== 'Invalid login credentials') {
           throw signInError;
         }
-        // 계정 없으면 회원가입 (trigger가 users 레코드 자동 생성)
+        // 2) 계정 없으면 회원가입 (trigger가 users 행 자동 생성)
         const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
@@ -58,22 +59,13 @@ export function LoginPage() {
         userId = signInData.user?.id;
       }
 
-      // preferred_lang 업데이트 + 프로필 가져오기
+      // 3) 백엔드 API로 프로필 보장 (service key로 RLS 우회)
       if (userId) {
-        await supabase
-          .from('users')
-          .update({ preferred_lang: lang })
-          .eq('id', userId);
-
-        const { data: profile } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', userId)
-          .single();
-
-        if (profile) {
-          useAuthStore.setState({ profile: profile as User });
-        }
+        const profile = await api.post<User>('/auth/ensure-profile', {
+          name,
+          preferred_lang: lang,
+        });
+        useAuthStore.setState({ profile });
       }
 
       navigate('/', { replace: true });

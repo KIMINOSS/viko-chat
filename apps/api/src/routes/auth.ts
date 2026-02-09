@@ -14,6 +14,42 @@ const searchSchema = z.object({
 });
 
 export const authRoutes: FastifyPluginAsync = async (fastify) => {
+  // POST /api/auth/ensure-profile - 프로필 보장 (없으면 생성, 있으면 업데이트)
+  fastify.post('/auth/ensure-profile', {
+    preHandler: authMiddleware,
+  }, async (request, reply) => {
+    const { user } = request as AuthenticatedRequest;
+
+    try {
+      const body = z.object({
+        name: z.string().min(1).max(100),
+        preferred_lang: z.enum(['ko', 'vi']),
+      }).parse(request.body);
+
+      const { data, error } = await supabase
+        .from('users')
+        .upsert(
+          {
+            id: user.id,
+            email: user.email ?? '',
+            name: body.name,
+            preferred_lang: body.preferred_lang,
+          },
+          { onConflict: 'id' },
+        )
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { success: true, data };
+    } catch (error) {
+      return reply.status(400).send({
+        success: false,
+        error: 'Failed to ensure profile',
+      });
+    }
+  });
+
   // GET /api/auth/profile - 내 프로필 조회
   fastify.get('/auth/profile', {
     preHandler: authMiddleware,
