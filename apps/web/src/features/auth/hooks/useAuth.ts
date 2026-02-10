@@ -41,9 +41,12 @@ function initAuth() {
         return;
       }
 
+      // session에서 user를 즉시 세팅 (failsafe 발동 시 로그인 리다이렉트 방지)
+      useAuthStore.setState({ user: session.user });
+
       const current = useAuthStore.getState();
       if (current.profile?.id === session.user.id) {
-        useAuthStore.setState({ user: session.user, loading: false });
+        useAuthStore.setState({ loading: false });
         return;
       }
 
